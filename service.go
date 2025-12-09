@@ -19,7 +19,8 @@ type Service interface {
 	Start(opts ...Options)
 
 	// Dump writes an HTML file for displaying the current state of the explorer and its entries.
-	Dump()
+	// Optional filename argument; defaults to "structexplorer.html".
+	Dump(filename ...string)
 
 	// Explore adds a new entry (next available row in column 0) for a value unless it cannot be explored.
 	Explore(label string, value any, options ...ExploreOption) Service
@@ -93,11 +94,24 @@ func (s *service) protect() func() {
 	return s.explorer.mutex.Unlock
 }
 
-func (s *service) serveIndex(w http.ResponseWriter, _ *http.Request) {
+func (s *service) serveIndex(w http.ResponseWriter, r *http.Request) {
 	defer s.protect()()
 
-	w.Header().Set("content-type", "text/html")
-	if err := s.indexTemplate.Execute(w, s.explorer.buildIndexData(newIndexDataBuilder())); err != nil {
+	data := s.explorer.buildIndexData(newIndexDataBuilder())
+
+	// Check Accept header for JSON
+	if strings.Contains(r.Header.Get("Accept"), "application/json") {
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(data.ToJSON()); err != nil {
+			slog.Error("failed to encode JSON", "err", err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Default HTML response
+	w.Header().Set("Content-Type", "text/html")
+	if err := s.indexTemplate.Execute(w, data); err != nil {
 		slog.Error("failed to execute template", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -132,10 +146,14 @@ func (s *service) Explore(label string, value any, options ...ExploreOption) Ser
 }
 
 // Dump writes an HTML file for displaying the current state of the explorer and its entries.
-func (s *service) Dump() {
+func (s *service) Dump(filename ...string) {
 	defer s.protect()()
 
-	out, err := os.Create("structexplorer.html")
+	name := "structexplorer.html"
+	if len(filename) > 0 && filename[0] != "" {
+		name = filename[0]
+	}
+	out, err := os.Create(name)
 	if err != nil {
 		slog.Error("failed to create dump file", "err", err)
 	}
