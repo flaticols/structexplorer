@@ -82,3 +82,29 @@ func TestServicEmptyFollow(t *testing.T) {
 		t.Fail()
 	}
 }
+
+func TestServeJSON(t *testing.T) {
+	var some = struct {
+		Name string
+		Age  int
+	}{
+		Name: "test",
+		Age:  42,
+	}
+	h := NewService("data", some).(*service)
+
+	rec := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/", nil)
+	req.Header.Set("Accept", "application/json")
+	h.ServeHTTP(rec, req)
+
+	if got, want := rec.Code, 200; got != want {
+		t.Errorf("got [%[1]v:%[1]T] want [%[2]v:%[2]T]", got, want)
+	}
+	if got, want := rec.Header().Get("Content-Type"), "application/json"; got != want {
+		t.Errorf("got [%[1]v:%[1]T] want [%[2]v:%[2]T]", got, want)
+	}
+	if !strings.Contains(rec.Body.String(), `"label":"data"`) {
+		t.Errorf("response should contain label, got: %s", rec.Body.String())
+	}
+}
